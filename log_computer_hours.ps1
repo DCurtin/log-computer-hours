@@ -383,7 +383,7 @@ class UserRecord
 
 }
 
-$adComputers = getADComputers -OULocaction "Fort Myers"
+$adComputers = getADComputers -OULocaction "Fort Myers";
 #$processedMap = [ordered]@{WHETSELL=$([ordered]@{"2019-09-26"=$([ordered]@{bwhetsell=$([UserRecord]::new('testName','testComputer',$(Get-Date),$(Get-Date),'2019-09-26'))})})}
 $processedMap = processComputers -listOfComputers $adComputers
 $generatedSFRecords = $(generateSFRecords -records $processedMap -json $false) | ConvertTo-Csv -NoTypeInformation -OutVariable "ComputerLogs__.csv"
@@ -397,3 +397,7 @@ $generatedSFRecords = $(generateSFRecords -records $processedMap -json $false) |
 
 #$mapOfComputersToLog = generateMapOfComputersToLogEvents -domainComputers $adComputers
 
+#$null = sfdx force:data:tree:export -q "SELECT Id, Name, User_Name__c, Computer__c, Last_Logout__c, First_Logon__c, Hours__c";
+$exportedUsers = cat .\computerLog__c.json | ConvertFrom-Json
+
+#function update
