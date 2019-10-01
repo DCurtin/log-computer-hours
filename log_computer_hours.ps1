@@ -46,9 +46,9 @@ function getADComputers
     )
 
     [System.Collections.ArrayList] $domainComputers = @();
-    Get-ADComputer -Properties @("Name","distinguishedName") -Filter *  | ForEach-Object -Process ({ if($_.distinguishedName -like "*Computer*$OULocaction*"){$null = $domainComputers.add($_.Name)}})
-    $userIndex = $domainComputers.IndexOf('WHETSELL');
-    $user = $domainComputers[$userIndex];
+    Get-ADComputer -Properties @("Name","distinguishedName") -Filter *  | ForEach-Object -Process ({ if($_.distinguishedName -like "*$OULocaction*"){$null = $domainComputers.add($_.Name)}})
+    #$userIndex = $domainComputers.IndexOf('WHETSELL');
+    #$user = $domainComputers[$userIndex];
     return $domainComputers
     #return @($user)
 }
@@ -127,7 +127,7 @@ function getStartAndEndTime
         $record = getStartAndEndTimeForAGivenUser -computer $computerName -userName $userName -events $userNamesToEvents[$userName] -date $date
         if($record -ne $null)
         {
-            appendToListOfMap -map $userNamesToRecord -key $userName -value $record
+            $userNamesToRecord.add($userName, $record);
         }
     })
     return $userNamesToRecord;
@@ -279,15 +279,40 @@ function generateSFRecordWithGenerator
 
             $userRecords.Keys | ForEach-Object -Process ({
                 $user = $_;
-                $userRecordFromDate = $($userRecords[$user]);
-
+                #Write-Host "$user $($userRecords[$user].userName)"
+                $userRecordFromDate = $($userRecords[$user])
+                #Write-Host $userRecordFromDate.userName;
                 #[userRecord]$userRecordForCurrentDate = $($userRecord[0]);
-                $recordGenerator.GenerateRecord($userRecordFromDate);
+                $recordGenerator.GenerateRecord($userRecordFromDate)
             })
             
         })
     })
     return $recordGenerator.getRecordsList();
+}
+
+function removeLesserHours
+{
+    param(
+        $oldRecords,
+        $newRecords
+    )
+    $mapOfNameToOldRecords = [ordered] @{};
+    $oldRecords | ForEach-Object -Process ({ $mapOfNameToOldRecords.add($_.Name, $_)});
+
+    $mapOfNameToNewRecords = [ordered] @{};
+    $newRecords | ForEach-Object -Process ({ $mapOfNameToNewRecords.add($_.Name, $_)});
+
+    $mapOfNameToOldRecords.Keys | ForEach-Object -Process ({
+        $recordName = $_;
+        if($mapOfNameToNewRecords[$recordName] -ne $null -and $mapOfNameToNewRecords[$recordName].Hours__c -lt $mapOfNameToOldRecords[$recordName].Hours__c)
+        {
+            $mapOfNameToNewRecords.remove($recordName);
+        }
+    })
+    
+    return $mapOfNameToNewRecords.Values
+
 }
 
 class SFRecordGenerator
@@ -303,7 +328,7 @@ class SFRecordGenerator
         $this.generateJson = $generateJson;
     }
 
-    GenerateRecord([userRecord]$record)
+    GenerateRecord($record)
     {
         if($this.generateJson)
         {
@@ -314,12 +339,12 @@ class SFRecordGenerator
         }
     }
 
-    GenerateJson([userRecord]$record)
+    GenerateJson($record)
     {
         $null = $this.generatedRecordList.Add($record.toJsonStructure($this.recordCount++));
     }
 
-    GenerateCSV([userRecord]$record)
+    GenerateCSV($record)
     {
         $null = $this.generatedRecordList.Add($record.toCSVStructure());
     }
@@ -362,7 +387,7 @@ class UserRecord
         $endDateForm = "$($this.endDate.Year)-$(([string]$this.endDate.Month).PadLeft(2,'0'))-$(([string]$this.endDate.Day).PadLeft(2,'0'))T$(([string]$this.endDate.Hour).PadLeft(2,'0')):$(([string]$this.endDate.Minute).PadLeft(2,'0')):$(([string]$this.endDate.Second).PadLeft(2,'0'))"
         $startDateForm = "$($this.startDate.Year)-$(([string]$this.startDate.Month).PadLeft(2,'0'))-$(([string]$this.startDate.Day).PadLeft(2,'0'))T$(([string]$this.startDate.Hour).PadLeft(2,'0')):$(([string]$this.startDate.Minute).PadLeft(2,'0')):$(([string]$this.startDate.Second).PadLeft(2,'0'))"
         $attributes = [ordered]@{type="computerLog__c"; referenceId="computerLog__cRef$refId"};
-        $recordDetails = [ordered]@{attributes=$attributes; Name="$($this.userName)-$($this.date)"; User_Name__c=$this.userName; Computer__c=$this.computer; Last_Logout__c=$endDateForm; First_Logon__c=$startDateForm; Hours__c=$this.hours}
+        $recordDetails = [ordered]@{attributes=$attributes; Name="$($this.userName)-$($this.date)"; User_Name__c=$this.userName; Computer__c=$this.computer; Last_Logout__c=$endDateForm; First_Logon__c=$startDateForm; Hours__c=$this.hours; Record_Date__c=$this.date}
 
         return $recordDetails;
     }
@@ -377,27 +402,33 @@ class UserRecord
         $endDateForm = "$($this.endDate.Year)-$(([string]$this.endDate.Month).PadLeft(2,'0'))-$(([string]$this.endDate.Day).PadLeft(2,'0'))T$(([string]$this.endDate.Hour).PadLeft(2,'0')):$(([string]$this.endDate.Minute).PadLeft(2,'0')):$(([string]$this.endDate.Second).PadLeft(2,'0'))"
         $startDateForm = "$($this.startDate.Year)-$(([string]$this.startDate.Month).PadLeft(2,'0'))-$(([string]$this.startDate.Day).PadLeft(2,'0'))T$(([string]$this.startDate.Hour).PadLeft(2,'0')):$(([string]$this.startDate.Minute).PadLeft(2,'0')):$(([string]$this.startDate.Second).PadLeft(2,'0'))"        
         
-        [psobject]$record = New-Object psobject -Property $([ordered] @{Name="$($this.userName)-$($this.date)"; User_Name__c=$this.userName; Computer__c=$this.computer; Last_Logout__c=$endDateForm; First_Logon__c=$startDateForm; Hours__c=$this.hours})
+        [psobject]$record = New-Object psobject -Property $([ordered] @{Name="$($this.userName)-$($this.date)"; User_Name__c=$this.userName; Computer__c=$this.computer; Last_Logout__c=$endDateForm; First_Logon__c=$startDateForm; Hours__c=$this.hours; Record_Date__c=$this.date})
         return $record;
     }
 
 }
 
-$adComputers = getADComputers -OULocaction "Fort Myers";
+[System.Collections.ArrayList]$adComputersFL = getADComputers -OULocaction "Fort Myers";
+[System.Collections.ArrayList]$adComputersSD = getADComputers -OULocaction "External-Shared";
+[System.Collections.ArrayList]$adComputersIL = getADComputers -OULocaction "Chicago";
+[System.Collections.ArrayList]$adComputerAdmin = getADComputers -OULocaction "Administrators";
+
+[System.Collections.ArrayList]$combinedComputers = $();
+
+$combinedComputers.AddRange($adComputersFL);
+$combinedComputers.AddRange($adComputersSD);
+$combinedComputers.AddRange($adComputersIL);
+$combinedComputers.AddRange($adComputerAdmin);
+
 #$processedMap = [ordered]@{WHETSELL=$([ordered]@{"2019-09-26"=$([ordered]@{bwhetsell=$([UserRecord]::new('testName','testComputer',$(Get-Date),$(Get-Date),'2019-09-26'))})})}
 $processedMap = processComputers -listOfComputers $adComputers
-$generatedSFRecords = $(generateSFRecords -records $processedMap -json $false) | ConvertTo-Csv -NoTypeInformation -OutVariable "ComputerLogs__.csv"
 
+$newRecords = $(generateSFRecords -records $processedMap -json $false)
 
+$oldRecordsRaw = sfdx force:data:soql:query -q "SELECT Id, Name, Record_Date__c, User_Name__c, Computer__c, Last_Logout__c, First_Logon__c, Hours__c FROM ComputerLog__c WHERE Record_Date__c=Last_N_Days:7" -u dcurtin@midlandira.com.dcurtin -rcsv
+$oldRecords = $oldRecordsRaw | ConvertFrom-Csv
 
-#[IO.File]::WriteAllLines('ComputerLogs__c.json', $generatedSFRecords)
-#[IO.File]::WriteAllLines('ComputerLogs__c.csv', $generatedSFRecords)
-#sfdx force:data:bulk:upsert -s computerlog__c -f .\computerlogs__c.csv -i Name -u dcurtin@midlandira.com.dcurtin
-#sfdx force:data:tree:import -f .\ComputerLogs__c.json -u dcurtin@midlandira.com.dcurtin
+$prunedRecords = $(removeLesserHours -oldRecords $oldRecords -newRecords $newRecords) | ConvertTo-Csv -NoTypeInformation
 
-#$mapOfComputersToLog = generateMapOfComputersToLogEvents -domainComputers $adComputers
-
-#$null = sfdx force:data:tree:export -q "SELECT Id, Name, User_Name__c, Computer__c, Last_Logout__c, First_Logon__c, Hours__c";
-$exportedUsers = cat .\computerLog__c.json | ConvertFrom-Json
-
-#function update
+[IO.File]::WriteAllLines('C:\users\dcurtin\ComputerLogs__c.csv', $prunedRecords)
+sfdx force:data:bulk:upsert -s computerlog__c -f 'C:\users\dcurtin\ComputerLogs__c.csv' -i Name -u dcurtin@midlandira.com.dcurtin
